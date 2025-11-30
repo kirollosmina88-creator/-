@@ -1,4 +1,5 @@
-export type Tab = 'home' | 'history' | 'gods' | 'oracle';
+export type Tab = 'home' | 'history' | 'gods' | 'pharaohs' | 'oracle';
+export type Language = 'ar' | 'en';
 
 export interface Message {
   id: string;
@@ -7,22 +8,27 @@ export interface Message {
   timestamp: Date;
 }
 
+export interface BilingualText {
+  ar: string;
+  en: string;
+}
+
 export interface God {
-  name: string;
-  title: string;
-  description: string;
+  name: BilingualText;
+  title: BilingualText;
+  description: BilingualText;
   imageUrl: string;
 }
 
 export interface Pharaoh {
-  name: string;
-  period: string;
-  description: string;
+  name: BilingualText;
+  period: BilingualText;
+  description: BilingualText;
   imageUrl: string;
 }
 
 export interface TimelineEvent {
-  year: string;
-  title: string;
-  description: string;
+  year: BilingualText;
+  title: BilingualText;
+  description: BilingualText;
 }

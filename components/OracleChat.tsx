@@ -1,20 +1,31 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Scroll, Sparkles, User, Loader2 } from 'lucide-react';
-import { askTheScribe } from '../services/gemini';
-import { Message } from '../types';
+import { streamAskTheScribe } from '../services/gemini';
+import { Message, Language } from '../types';
 
-const OracleChat: React.FC = () => {
+interface OracleChatProps {
+  lang: Language;
+}
+
+const OracleChat: React.FC<OracleChatProps> = ({ lang }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Initialize welcome message when language changes or on mount
+  useEffect(() => {
+    const welcomeText = lang === 'ar' 
+      ? 'أهلاً بك يا بني في أرض النيل العظيم. أنا إمحوتب، حكيم وكاتب الفراعنة. اسألني عما يحيرك بخصوص تاريخنا العظيم، الأهرامات، أو أسرار الآلهة.'
+      : 'Welcome, my child, to the land of the great Nile. I am Imhotep, scribe and sage of the Pharaohs. Ask me what puzzles you about our great history, the pyramids, or the secrets of the gods.';
+    
+    setMessages([{
       id: 'welcome',
       role: 'model',
-      text: 'أهلاً بك يا بني في أرض النيل العظيم. أنا إمحوتب، حكيم وكاتب الفراعنة. اسألني عما يحيرك بخصوص تاريخنا العظيم، الأهرامات، أو أسرار الآلهة.',
+      text: welcomeText,
       timestamp: new Date()
-    }
-  ]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+    }]);
+  }, [lang]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -44,17 +55,31 @@ const OracleChat: React.FC = () => {
       parts: [{ text: m.text }]
     }));
 
-    const responseText = await askTheScribe(input, history);
-
+    // Create a placeholder for the model response
+    const modelMessageId = (Date.now() + 1).toString();
     const modelMessage: Message = {
-      id: (Date.now() + 1).toString(),
+      id: modelMessageId,
       role: 'model',
-      text: responseText,
+      text: '',
       timestamp: new Date()
     };
-
     setMessages(prev => [...prev, modelMessage]);
-    setIsLoading(false);
+
+    try {
+      const stream = streamAskTheScribe(input, history, lang);
+      
+      for await (const chunk of stream) {
+        setMessages(prev => prev.map(msg => 
+          msg.id === modelMessageId 
+            ? { ...msg, text: msg.text + chunk }
+            : msg
+        ));
+      }
+    } catch (error) {
+      console.error("Stream error", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -72,9 +97,13 @@ const OracleChat: React.FC = () => {
           <div className="p-2 bg-egypt-gold rounded-full text-egypt-blue">
             <Scroll size={24} />
           </div>
-          <div>
-            <h3 className="text-xl font-bold text-egypt-gold font-serif">حكمة إمحوتب</h3>
-            <p className="text-xs text-slate-300">الذكاء الاصطناعي الفرعوني</p>
+          <div className={lang === 'ar' ? 'text-right' : 'text-left'}>
+            <h3 className="text-xl font-bold text-egypt-gold font-serif">
+              {lang === 'ar' ? 'حكمة إمحوتب' : "Imhotep's Wisdom"}
+            </h3>
+            <p className="text-xs text-slate-300">
+              {lang === 'ar' ? 'الذكاء الاصطناعي الفرعوني' : 'Pharaonic AI'}
+            </p>
           </div>
         </div>
         <Sparkles className="text-egypt-gold animate-pulse" />
@@ -85,7 +114,8 @@ const OracleChat: React.FC = () => {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex items-start gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+            className={`flex items-start gap-4 ${msg.role === 'user' ? (lang === 'ar' ? 'flex-row-reverse' : 'flex-row-reverse') : (lang === 'ar' ? '' : '')}`}
+            dir={lang === 'ar' ? 'rtl' : 'ltr'}
           >
             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-2 ${msg.role === 'user' ? 'bg-egypt-lapis border-blue-400' : 'bg-egypt-gold border-yellow-200'}`}>
               {msg.role === 'user' ? <User size={20} className="text-white" /> : <Scroll size={20} className="text-egypt-blue" />}
@@ -97,22 +127,25 @@ const OracleChat: React.FC = () => {
                 : 'bg-egypt-papyrus text-slate-900 rounded-bl-none border border-egypt-gold'
             }`}>
               <div className="whitespace-pre-wrap font-serif">
-                {msg.text}
+                {msg.text || (isLoading && msg.role === 'model' && msg.id === messages[messages.length-1].id ? <span className="animate-pulse">...</span> : '')}
               </div>
               <div className={`text-xs mt-2 opacity-60 ${msg.role === 'user' ? 'text-blue-200' : 'text-slate-600'}`}>
-                {msg.timestamp.toLocaleTimeString('ar-EG', {hour: '2-digit', minute: '2-digit'})}
+                {msg.timestamp.toLocaleTimeString(lang === 'ar' ? 'ar-EG' : 'en-US', {hour: '2-digit', minute: '2-digit'})}
               </div>
             </div>
           </div>
         ))}
-        {isLoading && (
-          <div className="flex items-start gap-4">
+        {/* Loading Indicator for initial connection */}
+        {isLoading && messages[messages.length-1]?.role === 'user' && (
+          <div className="flex items-start gap-4" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
             <div className="w-10 h-10 rounded-full bg-egypt-gold flex items-center justify-center shrink-0 animate-pulse">
               <Scroll size={20} className="text-egypt-blue" />
             </div>
             <div className="bg-egypt-papyrus p-4 rounded-2xl rounded-bl-none border border-egypt-gold flex items-center gap-2">
               <Loader2 className="animate-spin text-egypt-darkGold" size={20} />
-              <span className="text-slate-700 font-serif">إمحوتب يفك رموز البردية...</span>
+              <span className="text-slate-700 font-serif">
+                {lang === 'ar' ? 'إمحوتب يفك رموز البردية...' : 'Imhotep is deciphering the papyrus...'}
+              </span>
             </div>
           </div>
         )}
@@ -120,21 +153,21 @@ const OracleChat: React.FC = () => {
       </div>
 
       {/* Input Area */}
-      <div className="p-4 bg-slate-900 border-t border-egypt-gold">
+      <div className="p-4 bg-slate-900 border-t border-egypt-gold" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
         <div className="relative flex items-center gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyPress}
-            placeholder="اسأل إمحوتب عن تاريخ أجدادك..."
+            placeholder={lang === 'ar' ? "اسأل إمحوتب عن تاريخ أجدادك..." : "Ask Imhotep about history..."}
             className="w-full bg-slate-800 text-white placeholder-slate-400 border border-slate-600 rounded-full py-4 px-6 focus:outline-none focus:border-egypt-gold focus:ring-1 focus:ring-egypt-gold transition-all font-serif"
             disabled={isLoading}
           />
           <button
             onClick={handleSend}
             disabled={isLoading || !input.trim()}
-            className="absolute left-2 p-3 bg-egypt-gold text-egypt-blue rounded-full hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className={`absolute ${lang === 'ar' ? 'left-2' : 'right-2'} p-3 bg-egypt-gold text-egypt-blue rounded-full hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors`}
           >
             <Send size={20} />
           </button>
